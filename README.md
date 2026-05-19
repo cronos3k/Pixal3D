@@ -1,14 +1,15 @@
 
-> **This is a community fork** of [TencentARC/Pixal3D](https://github.com/TencentARC/Pixal3D) with several fixes and improvements for self-hosted use on high-VRAM workstations. See [CHANGELOG.md](CHANGELOG.md) for the full diff. All original credits and license terms are preserved below.
+> **This is a community fork** of [TencentARC/Pixal3D](https://github.com/TencentARC/Pixal3D) with several fixes and improvements for self-hosted use on high-VRAM workstations. See [CHANGELOG.md](CHANGELOG.md) for the full technical diff. All original credits and license terms are preserved below.
 >
 > **What this fork fixes / adds:**
 > - Preview frames and 3D viewer were black after generation due to Gradio `FileData` serialisation bug — fixed
 > - `remesh_project=0` was overriding the library default, producing blocky voxel-grid topology — fixed to `0.9`
-> - `CASCADE_MAX_NUM_TOKENS` raised from 49152 → 131072 so generation always runs at the model's maximum 1536 voxel resolution
-> - **OBJ export** — extracts mesh as OBJ + MTL + textures ZIP alongside the GLB
-> - All quality sliders (Shape Steps, Texture Steps, Texture Size, Max Vertices up to 5M) exposed and wired end-to-end
-> - Every slider paired with an editable number field — type exact values directly
-> - Every control has a description and tooltip explaining what it does and meaningful ranges
+> - `CASCADE_MAX_NUM_TOKENS` raised from 49152 → 131072 so generation always runs at the model's maximum 1536 voxel resolution instead of silently stepping down to 1280 for complex objects
+> - **Full Fidelity mesh extraction** — the default extraction was discarding the model's actual decoded mesh (FlexiDualGrid with learned sub-voxel vertex offsets) and replacing it with a coarser Dual Contouring reconstruction on a 96-cell grid, producing large facets in smooth areas regardless of the polygon limit set. Default changed to `remesh=False`. DC Remesh still selectable for clean-topology workflows. See [CHANGELOG.md](CHANGELOG.md) for a full explanation.
+> - **OBJ export** — mesh extracted as OBJ + MTL + textures ZIP alongside the GLB
+> - All quality controls (Shape Steps, Texture Steps, Texture Size, Max Faces up to 5M, Mesh Mode) exposed and wired end-to-end — nothing hardcoded
+> - Every slider paired with an editable number field — type exact polygon budgets directly
+> - Every control has a description and tooltip explaining what it does and its meaningful range
 
 ---
 

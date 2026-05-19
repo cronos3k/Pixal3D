@@ -5,7 +5,39 @@ Original work by Dong-Yang Li, Wang Zhao, Yuxin Chen, Wenbo Hu, Meng-Hao Guo, Fa
 
 ---
 
-## [Fork] — 2026-05-19
+## [Fork.2] — 2026-05-19
+
+### Critical mesh quality fix: Full Fidelity extraction mode
+
+**Background — how the pipeline actually produces geometry**
+
+Pixal3D uses a *Flexible Dual Grid* representation internally. During training, the model learns to place one vertex per occupied sparse voxel at a position determined by `(grid_coord + dual_vertex_offset) × voxel_size`. The `dual_vertex_offset` is a three-channel feature decoded by the neural network and represents a *learned sub-voxel displacement* — the model has encoded exactly where on the isosurface each vertex should sit. This is the highest-fidelity geometric output the network is capable of producing.
+
+The mesh that comes out of `pipeline.decode_latent()` therefore already contains full model precision: adaptive polygon density (more faces where the surface is geometrically complex, fewer where it is flat — both intentional and correct) and vertex positions that reflect what the network actually learned.
+
+**What the original pipeline was doing instead**
+
+`to_glb()` was called with `remesh=True`, which immediately discarded this decoded mesh and rebuilt topology from scratch using Dual Contouring (DC) on a 96-cell grid (1536 ÷ 16 = 96). DC places one vertex per active grid cell near the surface — it has no knowledge of the model's learned `dual_vertex_offset`. The only connection back to the original surface is the `project_back` parameter, which was additionally set to `0` in our codebase (see the earlier `remesh_project` fix), so even that correction wasn't applied.
+
+The visible result: large flat triangular facets in smooth regions of the mesh (torso, arms, broad clothing surfaces) coexisting with fine detail in geometrically complex regions (cloth folds, creases). DC generates more cells where more surface voxels are active — complex areas get dense geometry, flat areas get almost nothing. Applying smooth shading to this topology creates the characteristic look of a low-poly mesh with a smoothing modifier — shade gradients are correct but the silhouette and surface under close inspection reveal the underlying faceted geometry.
+
+Critically, the decimation slider had no meaningful effect in this mode. The DC mesh on a typical full-body character at 1536 resolution produces roughly 200K–500K faces. Setting the slider to 5M faces only prevented further reduction of a mesh already below that limit — it could not add geometry that DC never created.
+
+**The fix**
+
+- `remesh` parameter changed from hardcoded `True` → user-selectable, default `False` (**Full Fidelity** mode).
+- In Full Fidelity mode, `to_glb()` receives `remesh=False`. The FlexiDualGrid mesh is kept as-is, passed through topology cleanup (remove duplicate faces, repair non-manifold edges, fill small holes, unify orientation), then UV-unwrapped and texture-baked normally. The model's learned vertex positions are fully preserved.
+- DC Remesh mode (`remesh=True`) is still available via the **Mesh Mode** dropdown for workflows that specifically need clean quad-dominant topology (e.g. retopology base meshes, sculpting targets).
+- Added `verbose=True` to `to_glb()` so face counts at each processing stage are logged, making it straightforward to see the actual polygon count the model produced and verify the simplification ceiling is not being hit.
+- **Max Faces** slider renamed from "Max Vertices" — the `decimation_target` parameter is a face count, not a vertex count. The earlier label was incorrect.
+
+**Why this matters**
+
+The difference between Full Fidelity and DC Remesh is not subtle — it is the difference between the model's actual output and a geometric approximation of it. For assets going into a rendering pipeline, VFX production, or anywhere geometric accuracy matters, Full Fidelity preserves everything the network learned. DC Remesh was a reasonable default for the original HuggingFace Spaces demo (where clean downloadable topology mattered more than extraction fidelity) but is the wrong default for a local high-quality workstation setup.
+
+---
+
+## [Fork.1] — 2026-05-19
 
 ### Bug Fixes
 

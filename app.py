@@ -533,13 +533,16 @@ def _build_obj_zip(scene, zip_path: str):
 
 @app.api()
 @spaces.GPU(duration=240)
-def extract_glb_api(state_path: str, decimation_target: int, texture_size: int, session_id: str = "") -> dict:
+def extract_glb_api(state_path: str, decimation_target: int, texture_size: int,
+                    use_remesh: bool = False, session_id: str = "") -> dict:
     init_models()
     _reset_progress(session_id)
     _update_progress("Decoding latent", 0, 1)
 
     shape_slat, tex_slat, res = unpack_state(state_path)
     mesh = pipeline.decode_latent(shape_slat, tex_slat, res)[0]
+
+    print(f"[Mesh] Raw decoded: {mesh.vertices.shape[0]} vertices, {mesh.faces.shape[0]} faces")
     _update_progress("Decoding latent", 1, 1)
 
     glb = o_voxel.postprocess.to_glb(
@@ -547,7 +550,8 @@ def extract_glb_api(state_path: str, decimation_target: int, texture_size: int, 
         coords=mesh.coords, attr_layout=pipeline.pbr_attr_layout,
         grid_size=res, aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
         decimation_target=decimation_target, texture_size=texture_size,
-        remesh=True, remesh_band=1, remesh_project=0.9, use_tqdm=True,
+        remesh=use_remesh, remesh_band=1, remesh_project=0.9,
+        verbose=True, use_tqdm=True,
     )
     rot = np.array([
         [-1,  0,  0,  0],

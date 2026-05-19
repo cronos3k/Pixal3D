@@ -779,12 +779,23 @@
                             <p class="ctrl-hint">Size of the single UV texture atlas covering the entire mesh. 8192 is recommended when VRAM allows. Output file size grows roughly 4× with each step up. Choose 4096 for real-time game engines.</p>
                         </div>
 
-                        <div class="input-wrapper" title="Maximum number of vertices in the output mesh. The pipeline uses Dual Contouring remeshing — the actual count is driven by geometry complexity and may be lower than this cap. 1 000 000 vertices ≈ 2 000 000 triangles.">
-                            <label>Max Vertices
+                        <div class="input-wrapper" title="Maximum face count for the output mesh. Only cuts polygons if the mesh exceeds this number — it cannot add geometry that does not exist. In Full Fidelity mode this is rarely reached; in DC Remesh mode the output is typically under 500K faces regardless of this value.">
+                            <label>Max Faces
                                 <input type="number" class="inline-num" id="decimation_num" value="5000000" min="1000" max="5000000" step="1000" oninput="syncNum('decimation')" style="width: 90px;">
                             </label>
                             <input type="range" id="decimation" min="1000" max="5000000" step="1000" value="5000000" oninput="syncRange('decimation')">
-                            <p class="ctrl-hint">Hard ceiling on output mesh vertices. The actual count is whatever Dual Contouring produces at the current voxel resolution — this slider only cuts polygons if the mesh exceeds the limit. Enter exact values: e.g. 5000 for a low-poly game mesh, 500000 for detailed, 5000000 for maximum fidelity.</p>
+                            <p class="ctrl-hint">Hard upper limit on output faces (triangles). This is a simplification ceiling — it cannot create geometry. In Full Fidelity mode the model's natural face count is preserved; set lower only if you need a specific poly budget (e.g. 10000 for real-time).</p>
+                        </div>
+
+                        <hr style="border: 0; border-top: 1px solid var(--border); margin: 0.5rem 0;">
+
+                        <div class="input-wrapper" title="Controls how the decoded sparse voxel mesh is post-processed before UV-unwrapping and texture baking.">
+                            <label>Mesh Mode</label>
+                            <select id="mesh_mode" style="background: var(--surface-light); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.8rem;">
+                                <option value="fidelity" selected>Full Fidelity — preserve model output</option>
+                                <option value="remesh">DC Remesh — rebuild topology on voxel grid</option>
+                            </select>
+                            <p class="ctrl-hint"><b>Full Fidelity</b>: keeps the exact mesh the model decoded, with per-voxel learned vertex offsets at sub-voxel precision. Recommended — this is the actual neural network output. <b>DC Remesh</b>: discards the decoded mesh and rebuilds topology using Dual Contouring at the voxel grid resolution (96 cells). Produces cleaner quad-dominant topology but loses the model's sub-voxel geometric detail and creates large flat facets in smooth areas.</p>
                         </div>
 
                     </div>
@@ -1386,6 +1397,7 @@
                     generationResult.state_path,
                     parseInt(document.getElementById('decimation').value),
                     parseInt(document.getElementById('tex_size').value),
+                    document.getElementById('mesh_mode').value === 'remesh',
                     sessionId
                 ]);
                 const payload = result.data[0];
