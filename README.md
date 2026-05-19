@@ -14,6 +14,12 @@
 ---
 
 <div align="center">
+  <img src="assets/p3d.jpg" alt="Pixal3D output examples — female warrior, mech, fantasy castle" width="100%"/>
+</div>
+
+---
+
+<div align="center">
 
 # Pixal3D: Pixel-Aligned 3D Generation from Images
 
