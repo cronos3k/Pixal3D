@@ -5,6 +5,16 @@ Original work by Dong-Yang Li, Wang Zhao, Yuxin Chen, Wenbo Hu, Meng-Hao Guo, Fa
 
 ---
 
+## [Fork.3] — 2026-05-19
+
+### Operational fix: run.sh stale-process restart
+
+**Problem:** Restarting via `bash run.sh` while a previous instance was still running caused the new process to OOM immediately at model load. The old script relied on a `pixal3d.pid` file that could be stale or absent, so `kill $(cat pixal3d.pid)` silently failed and both processes competed for the same 48 GB.
+
+**Fix:** `run.sh` now kills any existing `python app.py` process by name (`pkill -f`) before launching, waits 4 seconds for GPU memory to drain, and removes the stale PID file. Also added `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to the environment as recommended by PyTorch for reducing fragmentation-driven OOM on large allocations.
+
+---
+
 ## [Fork.2] — 2026-05-19
 
 ### Critical mesh quality fix: Full Fidelity extraction mode
