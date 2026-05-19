@@ -3,21 +3,46 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# Output files
-output.glb
-autotune_cache.json
+*.pyd
+*.egg-info/
+dist/
 
 # Virtual environment
 venv/
 .venv/
 env/
 
-# IDE
-.idea/
+# Build artifacts & compiled extensions
+build_ext/
+wheels/
+*.whl
+build/
+
+# Runtime output
+tmp/
+*.glb
+*.zip
+*.obj
+*.mtl
+autotune_cache.json
+logs/
+pixal3d.pid
+
+# Model weights (too large for git — download via HuggingFace)
+*.ckpt
+*.safetensors
+*.bin
+*.pt
+*.pth
+hf_cache/
+
+# Editor / session files
+.claude/
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
 
 # OS
 .DS_Store

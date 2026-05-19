@@ -1,4 +1,17 @@
 
+> **This is a community fork** of [TencentARC/Pixal3D](https://github.com/TencentARC/Pixal3D) with several fixes and improvements for self-hosted use on high-VRAM workstations. See [CHANGELOG.md](CHANGELOG.md) for the full diff. All original credits and license terms are preserved below.
+>
+> **What this fork fixes / adds:**
+> - Preview frames and 3D viewer were black after generation due to Gradio `FileData` serialisation bug — fixed
+> - `remesh_project=0` was overriding the library default, producing blocky voxel-grid topology — fixed to `0.9`
+> - `CASCADE_MAX_NUM_TOKENS` raised from 49152 → 131072 so generation always runs at the model's maximum 1536 voxel resolution
+> - **OBJ export** — extracts mesh as OBJ + MTL + textures ZIP alongside the GLB
+> - All quality sliders (Shape Steps, Texture Steps, Texture Size, Max Vertices up to 5M) exposed and wired end-to-end
+> - Every slider paired with an editable number field — type exact values directly
+> - Every control has a description and tooltip explaining what it does and meaningful ranges
+
+---
+
 <div align="center">
 
 # Pixal3D: Pixel-Aligned 3D Generation from Images

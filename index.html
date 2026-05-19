@@ -334,6 +334,34 @@
             box-shadow: 0 0 10px rgba(129, 140, 248, 0.4);
         }
 
+        /* Inline editable number field that sits in the label row */
+        .inline-num {
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            color: var(--primary);
+            border-radius: 4px;
+            padding: 0.1rem 0.35rem;
+            font-size: 0.78rem;
+            font-family: monospace;
+            width: 78px;
+            text-align: right;
+            outline: none;
+            transition: border-color 0.2s;
+            -moz-appearance: textfield;
+        }
+        .inline-num:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(129,140,248,0.25); }
+        .inline-num::-webkit-outer-spin-button,
+        .inline-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+        /* Description text below each control */
+        .ctrl-hint {
+            font-size: 0.67rem;
+            color: var(--text-dim);
+            line-height: 1.45;
+            margin: -0.15rem 0 0 0;
+            opacity: 0.72;
+        }
+
         /* Action Buttons */
         .btn-stack {
             margin-top: auto;
@@ -646,30 +674,25 @@
             <div class="sidebar-section">
                 <h3><i data-lucide="sliders-horizontal" style="width: 14px;"></i> Base Settings</h3>
                 <div class="control-group">
-                    <div class="input-wrapper">
+                    <div class="input-wrapper" title="Voxel grid resolution. 1536 is the model's trained maximum — it produces the highest-detail geometry. 1024 is faster but coarser.">
                         <label>Target Resolution</label>
                         <select id="resolution">
-                            <option value="1024">1024 (Balanced)</option>
-                            <option value="1536" selected>1536 (High Quality)</option>
+                            <option value="1024">1024 — Balanced / Faster</option>
+                            <option value="1536" selected>1536 — Maximum Detail</option>
                         </select>
+                        <p class="ctrl-hint">Voxel grid resolution of the 3D shape. 1536 is the model's hard ceiling — determined by trained weights, not VRAM. Always use 1536 unless you need faster iteration.</p>
                     </div>
-                    <div class="input-wrapper">
+                    <div class="input-wrapper" title="Deterministic seed. Same seed + same image = identical result every time. Change to explore variations.">
                         <label>Generation Seed <span>#<span id="seed-display">42</span></span></label>
                         <div style="display: flex; gap: 0.5rem;">
                             <input type="number" id="seed" value="42" style="flex: 1;">
-                            <button class="btn btn-outline" style="width: 50px; padding: 0;" onclick="randomizeSeed()">
+                            <button class="btn btn-outline" style="width: 50px; padding: 0;" onclick="randomizeSeed()" title="Pick a random seed">
                                 <i data-lucide="rotate-cw" style="width: 16px;"></i>
                             </button>
                         </div>
+                        <p class="ctrl-hint">Controls which specific variation is generated. Identical seed + image = identical output. Useful for reproducible results or systematic comparisons.</p>
                     </div>
-                    <div class="input-wrapper">
-                        <p style="font-size: 0.72rem; color: var(--text-dim); line-height: 1.5; opacity: 0.7;">
-                            Note: FOV is auto-estimated via MoGe-2.<br>
-                            If distortion occurs, try manual FOV.<br>
-                            Default <b style="color: var(--primary);">0.2 rad</b> generally works well.
-                        </p>
-                    </div>
-                    <div class="input-wrapper">
+                    <div class="input-wrapper" title="Field of view of the input image's camera. Auto-estimated from depth via MoGe-2. Override if geometry looks squashed or stretched.">
                         <label>
                             Camera FOV
                             <span style="display: flex; align-items: center; gap: 0.35rem;">
@@ -684,9 +707,7 @@
                                 <option value="rad" selected>rad</option>
                             </select>
                         </div>
-                        <p id="fov-hint" style="font-size: 0.65rem; color: var(--text-dim); margin-top: 0.15rem;">
-                            Manual FOV in radians (0.02–2.97 rad)
-                        </p>
+                        <p id="fov-hint" class="ctrl-hint">Auto-estimated via MoGe-2 depth analysis. Disable Auto and enter manually if the result looks warped. 0.2 rad ≈ 11° — works for most photos. Wide-angle shots need a larger value (0.5–1.2 rad).</p>
                     </div>
                 </div>
             </div>
@@ -705,23 +726,67 @@
                 </div>
                 <div id="advanced-settings" style="display: none; padding-top: 1rem; border-top: 1px solid var(--border);">
                     <div class="control-group">
-                        <div class="input-wrapper">
-                            <label>SS Guidance <span><span id="ss_gs_val">7.5</span></span></label>
-                            <input type="range" id="ss_gs" min="1" max="10" step="0.1" value="7.5" oninput="updateVal('ss_gs')">
+
+                        <div class="input-wrapper" title="Classifier-free guidance scale for the sparse structure (voxel skeleton) stage. Higher = closer to the input image shape; lower = more generative freedom. Range 1–10.">
+                            <label>SS Guidance
+                                <input type="number" class="inline-num" id="ss_gs_num" value="7.5" min="1" max="10" step="0.1" oninput="syncNum('ss_gs')">
+                            </label>
+                            <input type="range" id="ss_gs" min="1" max="10" step="0.1" value="7.5" oninput="syncRange('ss_gs')">
+                            <p class="ctrl-hint">How strongly the voxel skeleton is steered toward your image. 7–8 is a reliable starting point. Very high values can over-constrain and cause artefacts; very low values drift from the source.</p>
                         </div>
-                        <div class="input-wrapper">
-                            <label>SS Sampling <span><span id="ss_steps_val">12</span></span></label>
-                            <input type="range" id="ss_steps" min="1" max="50" step="1" value="12" oninput="updateVal('ss_steps')">
+
+                        <div class="input-wrapper" title="Number of diffusion steps for the sparse structure (voxel occupancy) stage. More steps = more coherent skeleton, slower generation.">
+                            <label>SS Steps
+                                <input type="number" class="inline-num" id="ss_steps_num" value="16" min="1" max="50" step="1" oninput="syncNum('ss_steps')">
+                            </label>
+                            <input type="range" id="ss_steps" min="1" max="50" step="1" value="16" oninput="syncRange('ss_steps')">
+                            <p class="ctrl-hint">Diffusion steps for the coarse 3D voxel skeleton (Sparse Structure stage). 12–20 gives good results. Above 25 the improvement is marginal; use 50 only for final hero renders.</p>
                         </div>
-                        <div class="input-wrapper">
-                            <label>Shape Guidance <span><span id="shape_gs_val">7.5</span></span></label>
-                            <input type="range" id="shape_gs" min="1" max="10" step="0.1" value="7.5" oninput="updateVal('shape_gs')">
+
+                        <div class="input-wrapper" title="Classifier-free guidance scale for the high-resolution shape latent stage. Controls how faithfully surface detail follows image features.">
+                            <label>Shape Guidance
+                                <input type="number" class="inline-num" id="shape_gs_num" value="7.5" min="1" max="10" step="0.1" oninput="syncNum('shape_gs')">
+                            </label>
+                            <input type="range" id="shape_gs" min="1" max="10" step="0.1" value="7.5" oninput="syncRange('shape_gs')">
+                            <p class="ctrl-hint">Guidance scale for the SLaT shape refinement pass. Higher values lock surface features more tightly to image edges. Reduce slightly if you see over-sharpening or jagged edges.</p>
                         </div>
+
+                        <div class="input-wrapper" title="Number of diffusion steps for the high-resolution shape SLaT (Structured Latent) refinement. More steps = finer geometric surface detail, slower generation.">
+                            <label>Shape Steps
+                                <input type="number" class="inline-num" id="shape_steps_num" value="20" min="1" max="50" step="1" oninput="syncNum('shape_steps')">
+                            </label>
+                            <input type="range" id="shape_steps" min="1" max="50" step="1" value="20" oninput="syncRange('shape_steps')">
+                            <p class="ctrl-hint">Diffusion steps for high-res geometry refinement. 20 is a solid default. Push to 30–50 for production assets where you need maximum surface fidelity. Each step adds ~1–2 s on the A6000.</p>
+                        </div>
+
+                        <div class="input-wrapper" title="Number of diffusion steps for PBR texture generation. More steps = cleaner, less noisy materials and better colour fidelity.">
+                            <label>Texture Steps
+                                <input type="number" class="inline-num" id="tex_steps_num" value="20" min="1" max="50" step="1" oninput="syncNum('tex_steps')">
+                            </label>
+                            <input type="range" id="tex_steps" min="1" max="50" step="1" value="20" oninput="syncRange('tex_steps')">
+                            <p class="ctrl-hint">Diffusion steps for baking the PBR material (base colour, metallic, roughness). 20 is good for previews. Use 30–50 for final exports where texture quality matters most.</p>
+                        </div>
+
                         <hr style="border: 0; border-top: 1px solid var(--border); margin: 0.5rem 0;">
-                        <div class="input-wrapper">
-                            <label>Decimation <span><span id="decim_val">1M</span></span></label>
-                            <input type="range" id="decimation" min="100000" max="1000000" step="10000" value="1000000" oninput="updateVal('decimation')">
+
+                        <div class="input-wrapper" title="Resolution of the baked UV texture atlas. 8192×8192 gives maximum detail; 4096×4096 produces a 4× smaller file with noticeably softer textures up close.">
+                            <label>Texture Size</label>
+                            <select id="tex_size" style="background: var(--surface-light); border: 1px solid var(--border); color: var(--text); padding: 0.4rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.8rem;">
+                                <option value="2048">2048 — Fast / Small file</option>
+                                <option value="4096">4096 — Standard</option>
+                                <option value="8192" selected>8192 — Maximum detail</option>
+                            </select>
+                            <p class="ctrl-hint">Size of the single UV texture atlas covering the entire mesh. 8192 is recommended when VRAM allows. Output file size grows roughly 4× with each step up. Choose 4096 for real-time game engines.</p>
                         </div>
+
+                        <div class="input-wrapper" title="Maximum number of vertices in the output mesh. The pipeline uses Dual Contouring remeshing — the actual count is driven by geometry complexity and may be lower than this cap. 1 000 000 vertices ≈ 2 000 000 triangles.">
+                            <label>Max Vertices
+                                <input type="number" class="inline-num" id="decimation_num" value="5000000" min="1000" max="5000000" step="1000" oninput="syncNum('decimation')" style="width: 90px;">
+                            </label>
+                            <input type="range" id="decimation" min="1000" max="5000000" step="1000" value="5000000" oninput="syncRange('decimation')">
+                            <p class="ctrl-hint">Hard ceiling on output mesh vertices. The actual count is whatever Dual Contouring produces at the current voxel resolution — this slider only cuts polygons if the mesh exceeds the limit. Enter exact values: e.g. 5000 for a low-poly game mesh, 500000 for detailed, 5000000 for maximum fidelity.</p>
+                        </div>
+
                     </div>
                 </div>
             </div>
@@ -737,7 +802,11 @@
                 </button>
                 <button class="btn btn-outline" id="download-btn" style="display: none; background: rgba(16, 185, 129, 0.1); border-color: var(--accent); color: var(--accent);">
                     <i data-lucide="download"></i>
-                    Download Asset
+                    Download GLB
+                </button>
+                <button class="btn btn-outline" id="download-obj-btn" style="display: none; background: rgba(99, 102, 241, 0.1); border-color: #6366f1; color: #6366f1;">
+                    <i data-lucide="package"></i>
+                    Download OBJ
                 </button>
             </div>
         </div>
@@ -858,16 +927,47 @@
     <div class="status-toast" id="toast">Generation started!</div>
 
     <script type="module">
-        import { Client, handle_file } from "https://cdn.jsdelivr.net/npm/@gradio/client/dist/index.min.js";
+        // Direct API helpers — no @gradio/client dependency needed
+        async function uploadFile(file) {
+            const fd = new FormData();
+            fd.append('files', file, file.name);
+            const resp = await fetch('/gradio_api/upload', { method: 'POST', body: fd });
+            if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
+            const paths = await resp.json();
+            const path = paths[0];
+            return { path, url: `${window.location.origin}/gradio_api/file=${path}`,
+                     size: null, orig_name: file.name, mime_type: file.type,
+                     is_stream: false, meta: { _type: 'gradio.FileData' } };
+        }
 
-        let client;
+        function urlToFileData(url) {
+            const path = url.includes('/gradio_api/file=') ? url.split('/gradio_api/file=')[1] : url;
+            return { path, url, size: null, orig_name: null, mime_type: null,
+                     is_stream: false, meta: { _type: 'gradio.FileData' } };
+        }
+
+        async function gradioRun(apiName, data) {
+            const resp = await fetch(`/gradio_api/run${apiName}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ data })
+            });
+            if (!resp.ok) throw new Error(`API error ${resp.status}: ${await resp.text()}`);
+            const result = await resp.json();
+            if (result.error) throw new Error(result.error);
+            return result;
+        }
+
         let currentFile = null;
         let preprocessedFile = null;
         let isPreprocessing = false;
         let generationResult = null;
         let currentMode = "shaded_forest";
         let currentFrame = 0;
-        const sessionId = crypto.randomUUID();
+        const sessionId = (crypto.randomUUID?.() ?? 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0;
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+        }));
         let currentStep = 1;
 
         const MODES = [
@@ -879,16 +979,10 @@
             { name: "Blue", key: "shaded_courtyard" }
         ];
 
-        async function init() {
+        function init() {
             lucide.createIcons();
-            try {
-                client = await Client.connect(window.location.origin);
-                setupUI();
-                loadSamples();
-            } catch (err) {
-                console.error("Connection error:", err);
-                showToast("Connection failed. Try refreshing.");
-            }
+            setupUI();
+            loadSamples();
         }
 
         function setupUI() {
@@ -911,6 +1005,13 @@
                 const link = document.createElement('a');
                 link.href = document.getElementById('main-3d-viewer').src;
                 link.download = "pixal3d_export.glb";
+                link.click();
+            };
+            document.getElementById('download-obj-btn').onclick = () => {
+                if (!window._objZipUrl) return;
+                const link = document.createElement('a');
+                link.href = window._objZipUrl;
+                link.download = "pixal3d_export.zip";
                 link.click();
             };
 
@@ -1033,7 +1134,8 @@
             
             // Call preprocess and update with segmented result
             try {
-                const result = await client.predict("/preprocess", { image: handle_file(file) });
+                const fileData = await uploadFile(file);
+                const result = await gradioRun("/preprocess", [fileData]);
                 const processedUrl = result.data[0].url;
                 if (processedUrl) {
                     preprocessedFile = processedUrl;
@@ -1065,6 +1167,7 @@
             document.getElementById('render-controls').style.display = (num >= 2) ? 'block' : 'none';
             document.getElementById('extract-btn').style.display = (num === 2) ? 'flex' : 'none';
             document.getElementById('download-btn').style.display = (num === 3) ? 'flex' : 'none';
+            document.getElementById('download-obj-btn').style.display = (num === 3 && window._objZipUrl) ? 'flex' : 'none';
         }
 
         async function startGeneration() {
@@ -1078,6 +1181,8 @@
             resetModelViewer();
             document.getElementById('extract-btn').style.display = 'none';
             document.getElementById('download-btn').style.display = 'none';
+            document.getElementById('download-obj-btn').style.display = 'none';
+            window._objZipUrl = null;
 
             // Stay on step 1 during generation
             setStep(1);
@@ -1085,22 +1190,31 @@
             showLoading();
             startProgressListener();
             try {
-                const params = {
-                    image: preprocessedFile ? handle_file(preprocessedFile) : handle_file(currentFile),
-                    seed: parseInt(document.getElementById('seed').value),
-                    resolution: parseInt(document.getElementById('resolution').value),
-                    ss_guidance_strength: parseFloat(document.getElementById('ss_gs').value),
-                    ss_sampling_steps: parseInt(document.getElementById('ss_steps').value),
-                    shape_slat_guidance_strength: parseFloat(document.getElementById('shape_gs').value),
-                    manual_fov: (() => {
+                const imageData = preprocessedFile ? urlToFileData(preprocessedFile) : await uploadFile(currentFile);
+                const result = await gradioRun("/generate_3d", [
+                    imageData,
+                    parseInt(document.getElementById('seed').value),
+                    parseInt(document.getElementById('resolution').value),
+                    parseFloat(document.getElementById('ss_gs').value),
+                    0.7,   // ss_guidance_rescale
+                    parseInt(document.getElementById('ss_steps').value),
+                    5.0,   // ss_rescale_t
+                    parseFloat(document.getElementById('shape_gs').value),
+                    0.5,   // shape_slat_guidance_rescale
+                    parseInt(document.getElementById('shape_steps').value),
+                    3.0,   // shape_slat_rescale_t
+                    1.0,   // tex_slat_guidance_strength
+                    0.0,   // tex_slat_guidance_rescale
+                    parseInt(document.getElementById('tex_steps').value),
+                    3.0,   // tex_slat_rescale_t
+                    (() => {
                         if (document.getElementById('fov-auto').checked) return -1.0;
                         const v = parseFloat(document.getElementById('manual-fov').value);
                         return document.getElementById('fov-unit').value === 'rad' ? v * 180 / Math.PI : v;
                     })(),
-                    session_id: sessionId
-                };
-
-                const result = await client.predict("/generate_3d", params);
+                    'deg',
+                    sessionId
+                ]);
                 generationResult = result.data[0];
                 
                 stopProgressListener();
@@ -1186,31 +1300,45 @@
             }
         }
 
+        function fileToServableUrl(file) {
+            // If Gradio set a proper URL, use it (now that allowed_paths is set it should work)
+            if (file.url) return file.url;
+            // Fallback: reconstruct via our /tmp/ static route using the filename from path
+            if (file.path) {
+                const filename = file.path.split(/[\\/]/).pop();
+                return `/tmp/${filename}`;
+            }
+            return null;
+        }
+
         function populateFrames(renderPaths) {
+            console.log('[Pixal3D] populateFrames called with keys:', Object.keys(renderPaths));
+            const sampleMode = Object.keys(renderPaths)[0];
+            if (sampleMode) {
+                const sampleFile = renderPaths[sampleMode][0];
+                console.log('[Pixal3D] Sample FileData:', JSON.stringify(sampleFile));
+                console.log('[Pixal3D] Sample URL will be:', fileToServableUrl(sampleFile));
+            }
             const container = document.getElementById('frame-container');
             container.innerHTML = '';
             Object.entries(renderPaths).forEach(([mode, files]) => {
                 files.forEach((file, i) => {
                     const img = document.createElement('img');
-                    // Try the URL from Gradio, fallback to our mounted /tmp route if it's an absolute local path
-                    let url = file.url;
-                    if (!url && file.path) {
-                        const filename = file.path.split(/[\\/]/).pop();
-                        url = `/tmp/${filename}`;
-                    }
+                    const url = fileToServableUrl(file);
                     img.src = url;
                     img.className = 'preview-frame';
                     img.id = `frame-${mode}-${i}`;
                     img.onerror = () => {
-                        // Fallback attempt if the first URL fails
-                        const filename = file.path ? file.path.split(/[\\/]/).pop() : null;
-                        if (filename && !img.src.includes('/tmp/')) {
-                            img.src = `/tmp/${filename}`;
+                        console.warn(`[Pixal3D] Frame load failed: ${url}`);
+                        // Try Gradio file route as fallback
+                        if (file.path && !img.src.includes('/gradio_api/file=')) {
+                            img.src = `/gradio_api/file=${file.path}`;
                         }
                     };
                     container.appendChild(img);
                 });
             });
+            console.log(`[Pixal3D] Created ${container.children.length} frame elements`);
             updateFrame();
         }
 
@@ -1254,15 +1382,15 @@
             showLoading();
             startProgressListener();
             try {
-                const params = {
-                    state_path: generationResult.state_path,
-                    decimation_target: parseInt(document.getElementById('decimation').value),
-                    texture_size: 4096,
-                    session_id: sessionId
-                };
-
-                const result = await client.predict("/extract_glb_api", params);
-                const glbUrl = result.data[0].url;
+                const result = await gradioRun("/extract_glb_api", [
+                    generationResult.state_path,
+                    parseInt(document.getElementById('decimation').value),
+                    parseInt(document.getElementById('tex_size').value),
+                    sessionId
+                ]);
+                const payload = result.data[0];
+                const glbUrl = fileToServableUrl(payload.glb || payload);
+                window._objZipUrl = payload.obj_zip ? fileToServableUrl(payload.obj_zip) : null;
 
                 stopProgressListener();
 
@@ -1323,14 +1451,7 @@
                 'assets/images/s_16_img.png',
                 'assets/images/s_18_img.png',
                 'assets/images/s_20_img.webp',
-                'assets/images/musicman.png',
-                'assets/images/pizza.png',
-                'assets/images/sculpt.png',
-                'assets/images/treehouse.png',
-                'assets/images/warship.png',
-                'assets/images/5c80e5e03a3b60b6f03eaf555ba1dafc0e4230c472d7e8c8e2c5ca0a0dfcef10.webp',
-                'assets/images/c9340e744541f310bf89838f652602961d3e5950b31cd349bcbfc7e59e15cd2e.webp',
-                'assets/images/f94e2b76494ce2cf1874611273e5fb3d76b395793bb5647492fa85c2ce0a248b.webp'
+                'assets/images/s_20_img.webp'
             ];
 
             // Create track element
@@ -1384,12 +1505,27 @@
             chev.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
         };
 
-        window.updateVal = (id) => {
-            const val = document.getElementById(id).value;
-            let label = val;
-            if (id === 'decimation') label = (val/1000000).toFixed(1) + 'M';
-            document.getElementById(id + '_val').textContent = label;
+        // Two-way sync between range slider and inline number input
+        window.syncRange = (id) => {
+            const r = document.getElementById(id);
+            const n = document.getElementById(id + '_num');
+            if (n) n.value = r.value;
         };
+
+        window.syncNum = (id) => {
+            const n = document.getElementById(id + '_num');
+            const r = document.getElementById(id);
+            if (!r || !n) return;
+            let v = parseFloat(n.value);
+            const mn = parseFloat(r.min), mx = parseFloat(r.max);
+            if (isNaN(v)) v = parseFloat(r.value);
+            v = Math.max(mn, Math.min(mx, v));
+            r.value = v;
+            n.value = v;
+        };
+
+        // Legacy alias — keep in case anything still calls it
+        window.updateVal = window.syncRange;
 
         window.randomizeSeed = () => {
             const s = Math.floor(Math.random() * 999999);
@@ -1478,6 +1614,20 @@
             requestAnimationFrame(autoScrollLoop);
         }
         requestAnimationFrame(autoScrollLoop);
+
+        // Surface JS errors visibly so issues are easy to diagnose
+        window.onerror = (msg, src, line) => {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#c0392b;color:#fff;padding:10px 16px;font-family:monospace;font-size:13px';
+            banner.textContent = `JS Error: ${msg} (line ${line})`;
+            document.body.prepend(banner);
+        };
+        window.addEventListener('unhandledrejection', e => {
+            const banner = document.createElement('div');
+            banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#e67e22;color:#fff;padding:10px 16px;font-family:monospace;font-size:13px';
+            banner.textContent = `Unhandled error: ${e.reason?.message || e.reason}`;
+            document.body.prepend(banner);
+        });
 
         init();
     </script>

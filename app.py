@@ -4,6 +4,7 @@ import argparse
 import math
 import time
 import shutil
+import zipfile
 import cv2
 import torch
 import numpy as np
@@ -26,7 +27,7 @@ init_lock = threading.Lock()
 
 os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-os.environ["ATTN_BACKEND"] = "flash_attn_3"
+os.environ["ATTN_BACKEND"] = os.environ.get("ATTN_BACKEND", "flash_attn")
 os.environ["FLEX_GEMM_AUTOTUNE_CACHE_PATH"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'autotune_cache.json')
 os.environ["FLEX_GEMM_AUTOTUNER_VERBOSE"] = '1'
 
@@ -62,7 +63,7 @@ STEPS = 8
 
 # Cascade parameters
 CASCADE_LR_RESOLUTION = 512
-CASCADE_MAX_NUM_TOKENS = 49152
+CASCADE_MAX_NUM_TOKENS = 131072
 
 # MoGe defaults
 MOGE_MODEL_NAME = "Ruicheng/moge-2-vitl"
@@ -326,7 +327,10 @@ app = Server()
 async def homepage():
     html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
     with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
+        return HTMLResponse(content=f.read(), headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache"
+        })
 
 @app.get("/progress")
 async def progress_poll(request: Request):
@@ -339,6 +343,7 @@ async def progress_poll(request: Request):
         return JSONResponse(data)
     except (FileNotFoundError, json.JSONDecodeError):
         return JSONResponse({"stage": "Waiting...", "step": 0, "total": 0, "done": False})
+
 
 @app.api()
 @spaces.GPU(duration=30)
@@ -453,7 +458,7 @@ def generate_3d(
         for i, frame in enumerate(frames):
             p = os.path.abspath(os.path.join(TMP_DIR, f"render_{mode_key}_{i}_{int(time.time()*1000)}.jpg"))
             Image.fromarray(frame).save(p, quality=85)
-            mode_files.append(FileData(path=p))
+            mode_files.append(FileData(path=p).model_dump())
         render_files[mode_key] = mode_files
 
     _finish_progress()
@@ -464,23 +469,85 @@ def generate_3d(
         "distance": camera_params['distance'],
     }
 
+def _build_obj_zip(scene, zip_path: str):
+    """Export a trimesh scene to model.obj + model.mtl + textures ZIP."""
+    import trimesh.exchange.obj as tobj
+
+    # Collect geometries from scene or bare mesh
+    if isinstance(scene, trimesh.Scene):
+        geoms = list(scene.geometry.values())
+    else:
+        geoms = [scene]
+
+    obj_parts = []
+    mtl_parts = ["# Pixal3D OBJ export\n"]
+    texture_files = {}
+    v_offset = 1
+    vt_offset = 1
+
+    for idx, mesh in enumerate(geoms):
+        mat_name = f"mat{idx}"
+        try:
+            obj_str, tex_dict = tobj.export_obj(mesh, return_texture=True, write_texture=False, include_normals=False)
+        except Exception:
+            obj_str = mesh.export(file_type='obj')
+            if isinstance(obj_str, bytes):
+                obj_str = obj_str.decode('utf-8', errors='replace')
+            tex_dict = {}
+
+        # Patch vertex/UV offsets so multiple meshes combine correctly
+        lines = []
+        for line in obj_str.splitlines():
+            if line.startswith('mtllib') or line.startswith('usemtl'):
+                continue
+            lines.append(line)
+
+        obj_parts.append(f"usemtl {mat_name}\n" + "\n".join(lines) + "\n")
+
+        # Handle textures
+        mtl_parts.append(f"\nnewmtl {mat_name}\nKd 1 1 1\nKs 0 0 0\n")
+        for tex_name, img_data in (tex_dict or {}).items():
+            safe_name = f"tex{idx}_{tex_name}"
+            if hasattr(img_data, 'save'):
+                buf = io.BytesIO()
+                img_data.save(buf, format='PNG')
+                texture_files[safe_name] = buf.getvalue()
+            elif isinstance(img_data, (bytes, bytearray)):
+                texture_files[safe_name] = bytes(img_data)
+            if 'diffuse' in tex_name.lower() or idx == 0 and not texture_files:
+                mtl_parts.append(f"map_Kd {safe_name}\n")
+            else:
+                mtl_parts.append(f"map_Kd {safe_name}\n")
+
+        v_offset += len(mesh.vertices)
+        if hasattr(mesh.visual, 'uv') and mesh.visual.uv is not None:
+            vt_offset += len(mesh.visual.uv)
+
+    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('model.mtl', ''.join(mtl_parts))
+        full_obj = "mtllib model.mtl\n" + ''.join(obj_parts)
+        zf.writestr('model.obj', full_obj)
+        for fname, data in texture_files.items():
+            zf.writestr(fname, data)
+
+
 @app.api()
 @spaces.GPU(duration=240)
-def extract_glb_api(state_path: str, decimation_target: int, texture_size: int, session_id: str = "") -> FileData:
+def extract_glb_api(state_path: str, decimation_target: int, texture_size: int, session_id: str = "") -> dict:
     init_models()
     _reset_progress(session_id)
     _update_progress("Decoding latent", 0, 1)
-    
+
     shape_slat, tex_slat, res = unpack_state(state_path)
     mesh = pipeline.decode_latent(shape_slat, tex_slat, res)[0]
     _update_progress("Decoding latent", 1, 1)
-    
+
     glb = o_voxel.postprocess.to_glb(
         vertices=mesh.vertices, faces=mesh.faces, attr_volume=mesh.attrs,
         coords=mesh.coords, attr_layout=pipeline.pbr_attr_layout,
         grid_size=res, aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
         decimation_target=decimation_target, texture_size=texture_size,
-        remesh=True, remesh_band=1, remesh_project=0, use_tqdm=True,
+        remesh=True, remesh_band=1, remesh_project=0.9, use_tqdm=True,
     )
     rot = np.array([
         [-1,  0,  0,  0],
@@ -489,11 +556,23 @@ def extract_glb_api(state_path: str, decimation_target: int, texture_size: int, 
         [ 0,  0,  0,  1],
     ], dtype=np.float64)
     glb.apply_transform(rot)
-    
-    out_glb = os.path.join(TMP_DIR, f"result_{int(time.time()*1000)}.glb")
+
+    ts = int(time.time() * 1000)
+    out_glb = os.path.join(TMP_DIR, f"result_{ts}.glb")
     glb.export(out_glb, extension_webp=True)
+
+    out_zip = os.path.join(TMP_DIR, f"result_{ts}.zip")
+    try:
+        _build_obj_zip(glb, out_zip)
+    except Exception as e:
+        print(f"[OBJ export] Warning: {e}")
+        out_zip = None
+
     _finish_progress()
-    return FileData(path=out_glb)
+    result = {"glb": FileData(path=out_glb).model_dump()}
+    if out_zip:
+        result["obj_zip"] = FileData(path=out_zip).model_dump()
+    return result
 
 # Mount assets and tmp for direct access
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
@@ -509,4 +588,4 @@ if __name__ == "__main__":
     # Pre-initialize models before launching the server
     init_models()
     
-    app.launch(show_error=True, share=True)
+    app.launch(show_error=True, server_name="0.0.0.0", server_port=7861, allowed_paths=[TMP_DIR])
